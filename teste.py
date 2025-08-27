@@ -35,7 +35,7 @@ def limpar_icms_c100_e_c190(linha):
             # Checando valor original da ALIQ_ICMS
             aliq_icms_original = campos[4]
             campos[4] = "0,00"  # ALIQ ICMS
-            campos[5] = "0,00"  # VL_BC_ICMS
+            #campos[5] = "0,00"  # VL CONTABIL NUNCA ZERAR
             campos[6] = "0,00"  # VL_ICMS
             campos[7] = "0,00"  # VL_BC_ICMS_ST
             campos[8] = "0,00"  # VL_ICMS_ST
