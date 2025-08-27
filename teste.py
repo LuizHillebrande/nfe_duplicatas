@@ -6,6 +6,50 @@ from tkinter import filedialog, messagebox
 
 # ---------------- FUNÇÕES ----------------
 
+def limpar_icms_c100_e_c190(linha):
+    campos = linha.strip().split("|")
+
+    try:
+        if campos[1] == "C100":
+            # Garante que tem pelo menos 35 campos
+            while len(campos) < 35:
+                campos.append("")
+            
+            campos[21] = "0,00"  # VL_BC_ICMS
+            campos[22] = "0,00"  # VL_ICMS
+            campos[23] = "0,00"  # VL_BC_ICMS_ST
+            campos[24] = "0,00"  # VL_ICMS_ST
+            campos[25] = "0,00"  # VL_IPI
+            campos[26] = "0,00"  # VL_PIS
+            campos[27] = "0,00"  # VL_COFINS
+            campos[28] = "0,00"  # VL_PIS_ST
+            campos[29] = "0,00"  # VL_COFINS_ST
+
+            print(f"[INFO] C100 zerado com sucesso: {linha.strip()}")
+
+        elif campos[1] == "C190":
+            # Garante que tem pelo menos 20 campos
+            while len(campos) < 20:
+                campos.append("")
+
+            # Checando valor original da ALIQ_ICMS
+            aliq_icms_original = campos[4]
+            campos[4] = "0,00"  # ALIQ ICMS
+            campos[5] = "0,00"  # VL_BC_ICMS
+            campos[6] = "0,00"  # VL_ICMS
+            campos[7] = "0,00"  # VL_BC_ICMS_ST
+            campos[8] = "0,00"  # VL_ICMS_ST
+            campos[10] = "0,00" # VL_IPI
+            #print(f"[INFO] C190 zerado com sucesso (ALIQ_ICMS antes: {aliq_icms_original}): {linha.strip()}")
+            linha_zerada = "|".join(campos)
+            print(f"[INFO] C190 zerado com sucesso (ALIQ_ICMS antes: {aliq_icms_original}): {linha_zerada}")
+
+    except IndexError as e:
+        print(f"[ERRO] Linha malformada: {linha.strip()} | Erro: {e}")
+
+    return "|".join(campos) + "|\n"
+
+
 def ler_xml_notas(pasta_xml):
     """
     Lê todos os XMLs da pasta e extrai:
@@ -100,6 +144,11 @@ def processar_sped(arquivo_sped, notas_xml, saida_sped):
 
         if linha.startswith("|C990|"):
             continue  # vamos recalcular depois
+
+        campos = linha.strip().split("|")
+        if campos[1] in ("C100", "C190"):
+            linha = limpar_icms_c100_e_c190(linha)
+
 
         novas_linhas.append(linha)
         campos = linha.strip().split("|")
