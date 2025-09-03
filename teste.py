@@ -29,7 +29,7 @@ def limpar_icms_c100_e_c190(linha):
 
         elif campos[1] == "C190":
             # Garante que tem pelo menos 20 campos
-            while len(campos) < 20:
+            while len(campos) < 23:
                 campos.append("")
 
             # Checando valor original da ALIQ_ICMS
@@ -39,7 +39,13 @@ def limpar_icms_c100_e_c190(linha):
             campos[6] = "0,00"  # VL_ICMS
             campos[7] = "0,00"  # VL_BC_ICMS_ST
             campos[8] = "0,00"  # VL_ICMS_ST
+            campos[9] = "0,00"
             campos[10] = "0,00" # VL_IPI
+            campos[11] = "0,00"
+            print("lista",list(enumerate(campos)))
+
+            #|C190|051|1910|0,00|1034,81|0,00|0,00|0,00|0,00|0,00|0,00||||||||| (exemplo de C190 zerado)
+            #|C190|500|1403|0,00|4719,47|0,00|0,00|0,00|564,27|0,00|0,00|||||||||
             #print(f"[INFO] C190 zerado com sucesso (ALIQ_ICMS antes: {aliq_icms_original}): {linha.strip()}")
             linha_zerada = "|".join(campos)
             print(f"[INFO] C190 zerado com sucesso (ALIQ_ICMS antes: {aliq_icms_original}): {linha_zerada}")
@@ -68,14 +74,28 @@ def ler_xml_notas(pasta_xml):
         tree = ET.parse(caminho)
         root = tree.getroot()
 
-        # Pega a chave da NF
-        chave = root.find(".//{*}chNFe")
-        chave = chave.text.strip() if chave is not None else None
-        print("➡️ Chave:", chave)
-        
+        # Tenta pegar chave da NF-e
+        chave_el = root.find(".//{*}chNFe")
+        if chave_el is not None and chave_el.text:
+            chave = chave_el.text.strip()
+        else:
+            # Se não achou, tenta pegar chave da NF dentro do CT-e
+            chave_el = root.find(".//{*}infNFe/{*}chave")
+            chave = chave_el.text.strip() if chave_el is not None and chave_el.text else None
 
-        # Número da NF
-        n_nf = root.find(".//{*}nNF").text.strip()
+        print("➡️ Chave:", chave)
+
+        # Agora tenta pegar o número da NF
+        n_nf = None
+        n_nf_el = root.find(".//{*}nNF")
+
+        if n_nf_el is not None and n_nf_el.text:
+            n_nf = n_nf_el.text.strip()
+        else:
+            # Caso seja CT-e (não tem <nNF>)
+            if chave and len(chave) == 44:
+                n_nf = chave[25:34].lstrip("0")
+
         print("➡️ Número NF:", n_nf)
 
         # Data de emissão
@@ -154,18 +174,18 @@ def processar_sped(arquivo_sped, notas_xml, saida_sped):
         campos = linha.strip().split("|")
 
         # Encontrando C100
-        if len(campos) > 9 and campos[1] == "C100":
+        if len(campos) > 9 and campos[1] == "C100" and campos[2] == "0":
             mod = campos[5].strip()
             chave_atual = campos[9].strip()
             print(f"\n🔍 Encontrado C100 com chave {chave_atual}, modelo {mod}")
 
             # Apenas NFe (55) e NFCe (65) aceitam duplicatas
-            if mod not in ["55", "65"]:
+            if mod not in ["55", "65", "57"]:
                 print(f"⚠️ Modelo {mod} não aceita duplicatas. Ignorando C140/C141.")
                 continue
 
             if chave_atual not in notas_xml:
-                print(f"⚠️ Chave {chave_atual} não encontrada nos XMLs. Ignorando C140/C141.")
+                print(f"⚠️ Chave {chave_atual} não encontrada. XMLs carregados: {list(notas_xml.keys())}")
                 continue
 
             nota = notas_xml[chave_atual]
@@ -299,8 +319,9 @@ def atualizar_bloco9(bloco9, count_c140, count_c141):
 
     return novas_linhas, count_9900, count_lin9
 
-
-# ---------------- INTERFACE GRÁFICA ----------------
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+import os
 
 def escolher_pasta_xml():
     pasta = filedialog.askdirectory()
@@ -313,6 +334,16 @@ def escolher_sped():
     if arquivo:
         entry_sped.delete(0, tk.END)
         entry_sped.insert(0, arquivo)
+
+# ---------------- FUNÇÃO DE LOG ----------------
+
+def log(texto):
+    text_logs.configure(state='normal')
+    text_logs.insert(tk.END, texto + "\n")
+    text_logs.see(tk.END)
+    text_logs.configure(state='disabled')
+
+# ---------------- FUNÇÃO EXECUTAR ----------------
 
 def executar():
     pasta_xml = entry_xml.get()
@@ -333,35 +364,60 @@ def executar():
     if not saida_sped:
         return
 
+    # Limpar logs
+    text_logs.configure(state='normal')
+    text_logs.delete(1.0, tk.END)
+    text_logs.configure(state='disabled')
+
     try:
-        notas = ler_xml_notas(pasta_xml)
-        processar_sped(arquivo_sped, notas, saida_sped)
+        log("🔎 Lendo XMLs da pasta: " + pasta_xml)
+        notas = ler_xml_notas(pasta_xml)  # Mantém sua função existente
+        log(f"📄 {len(notas)} XMLs processados.")
+
+        processar_sped(arquivo_sped, notas, saida_sped)  # Mantém sua função existente
+        log(f"✅ SPED corrigido gerado: {saida_sped}")
+
         messagebox.showinfo("Sucesso", f"Novo SPED gerado: {saida_sped}")
     except Exception as e:
+        log(f"❌ Erro: {str(e)}")
         messagebox.showerror("Erro", str(e))
 
-
-# ---------------- JANELA ----------------
+# ---------------- INTERFACE GRÁFICA ----------------
 
 root = tk.Tk()
 root.title("Gerar SPED com Duplicatas")
+root.geometry("800x600")
+root.resizable(False, False)
 
-frame1 = tk.Frame(root)
-frame1.pack(padx=10, pady=5)
-tk.Label(frame1, text="Pasta de XML:").pack(side=tk.LEFT)
-entry_xml = tk.Entry(frame1, width=50)
+# Estilo
+root.configure(bg="#f0f0f0")
+
+# Frame XML
+frame1 = tk.Frame(root, bg="#f0f0f0")
+frame1.pack(padx=10, pady=5, fill="x")
+tk.Label(frame1, text="Pasta de XML:", bg="#f0f0f0").pack(side=tk.LEFT)
+entry_xml = tk.Entry(frame1, width=60)
 entry_xml.pack(side=tk.LEFT, padx=5)
-tk.Button(frame1, text="Procurar", command=escolher_pasta_xml).pack(side=tk.LEFT)
+tk.Button(frame1, text="Procurar", command=escolher_pasta_xml, bg="#007ACC", fg="white").pack(side=tk.LEFT)
 
-frame2 = tk.Frame(root)
-frame2.pack(padx=10, pady=5)
-tk.Label(frame2, text="Arquivo SPED:").pack(side=tk.LEFT)
-entry_sped = tk.Entry(frame2, width=50)
+# Frame SPED
+frame2 = tk.Frame(root, bg="#f0f0f0")
+frame2.pack(padx=10, pady=5, fill="x")
+tk.Label(frame2, text="Arquivo SPED:", bg="#f0f0f0").pack(side=tk.LEFT)
+entry_sped = tk.Entry(frame2, width=60)
 entry_sped.pack(side=tk.LEFT, padx=5)
-tk.Button(frame2, text="Procurar", command=escolher_sped).pack(side=tk.LEFT)
+tk.Button(frame2, text="Procurar", command=escolher_sped, bg="#007ACC", fg="white").pack(side=tk.LEFT)
 
-frame3 = tk.Frame(root)
-frame3.pack(pady=15)
-tk.Button(frame3, text="Gerar SPED Corrigido", command=executar, bg="green", fg="white").pack()
+# Botão executar
+frame3 = tk.Frame(root, bg="#f0f0f0")
+frame3.pack(pady=10)
+tk.Button(frame3, text="Gerar SPED Corrigido", command=executar, bg="green", fg="white", font=("Arial", 12, "bold")).pack()
+
+# Logs roláveis
+frame_logs = tk.Frame(root)
+frame_logs.pack(padx=10, pady=10, fill="both", expand=True)
+tk.Label(frame_logs, text="Logs de Processamento:").pack(anchor="w")
+text_logs = scrolledtext.ScrolledText(frame_logs, width=95, height=25, state='disabled', bg="#1e1e1e", fg="white", font=("Consolas", 10))
+text_logs.pack(fill="both", expand=True)
 
 root.mainloop()
