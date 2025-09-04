@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox
 
 # ---------------- FUNÇÕES ----------------
 
+
 def limpar_icms_c100_e_c190(linha):
     campos = linha.strip().split("|")
 
@@ -141,7 +142,13 @@ def _num2(valor):
     except:
         return "01"
 
+
 def processar_sped(arquivo_sped, notas_xml, saida_sped):
+    global cfops_lista
+    cfops_lista = list(combo_cfops['values'])
+
+    c100_chave = None
+    cfop_c190 = None
     """
     Lê o SPED, insere registros C140/C141, ajusta C990, 9900 e |9999|.
     """
@@ -154,7 +161,7 @@ def processar_sped(arquivo_sped, notas_xml, saida_sped):
     dentro_bloco9 = False
     count_c140, count_c141 = 0, 0
 
-    for linha in linhas:
+    for i, linha in enumerate(linhas):
         if linha.startswith("|9001|"):
             dentro_bloco9 = True
 
@@ -179,10 +186,22 @@ def processar_sped(arquivo_sped, notas_xml, saida_sped):
             chave_atual = campos[9].strip()
             print(f"\n🔍 Encontrado C100 com chave {chave_atual}, modelo {mod}")
 
+            gerar_duplicata = True
+            cfop_c190 = None
+
+            for j in range(i+1, len(linhas)):
+                campos_next = linhas[j].strip().split("|")
+                if len(campos_next) > 2 and campos_next[1] == "C190":
+                    cfop_c190 = campos_next[3].strip()
+                    if cfop_c190 in cfops_lista:  # usa a lista dinâmica
+                        gerar_duplicata = False
+                    break
+
+
             # Apenas NFe (55) e NFCe (65) aceitam duplicatas
-            if mod not in ["55", "65", "57"]:
-                print(f"⚠️ Modelo {mod} não aceita duplicatas. Ignorando C140/C141.")
-                continue
+            if mod not in ["55", "65", "57"] or not gerar_duplicata:
+                    print(f"⚠️ Modelo {mod} ou CFOP {cfop_c190} não aceita duplicatas. Ignorando C140/C141.")
+                    continue
 
             if chave_atual not in notas_xml:
                 print(f"⚠️ Chave {chave_atual} não encontrada. XMLs carregados: {list(notas_xml.keys())}")
@@ -280,8 +299,6 @@ def processar_sped(arquivo_sped, notas_xml, saida_sped):
 
 
 
-
-
 def atualizar_bloco9(bloco9, count_c140, count_c141):
     novas_linhas = []
     atualizado_c140 = False
@@ -323,17 +340,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import os
 
-def escolher_pasta_xml():
+def escolher_pasta_xml(entry):
     pasta = filedialog.askdirectory()
     if pasta:
-        entry_xml.delete(0, tk.END)
-        entry_xml.insert(0, pasta)
+        entry.delete(0, tk.END)
+        entry.insert(0, pasta)
 
-def escolher_sped():
-    arquivo = filedialog.askopenfilename(filetypes=[("SPED TXT", "*.txt")])
+def escolher_sped(entry):
+    arquivo = filedialog.askopenfilename(filetypes=[("Arquivos SPED", "*.txt")])
     if arquivo:
-        entry_sped.delete(0, tk.END)
-        entry_sped.insert(0, arquivo)
+        entry.delete(0, tk.END)
+        entry.insert(0, arquivo)
 
 # ---------------- FUNÇÃO DE LOG ----------------
 
@@ -382,14 +399,72 @@ def executar():
         log(f"❌ Erro: {str(e)}")
         messagebox.showerror("Erro", str(e))
 
+CFOPS_FILE = "cfops_avista.json"
+
+import os
+import json
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
+from datetime import datetime, timedelta
+
+# ---------------- FUNÇÕES CFOPS ----------------
+
+def carregar_cfops():
+    if os.path.exists(CFOPS_FILE):
+        with open(CFOPS_FILE, "r") as f:
+            return json.load(f)
+    else:
+        # CFOPs default
+        return [
+    "5101",  # Venda de produção do estabelecimento
+    "5125",  # Remessa para industrialização
+    "5910",  # Remessa em bonificação, doação ou brinde (intraestadual)
+    "5911",  # Remessa de amostra grátis
+    "5912",  # Remessa de mercadoria para demonstração
+    "5913",  # Retorno de mercadoria recebida para demonstração
+    "5914",  # Remessa para exposição ou feira
+    "5915",  # Remessa para conserto ou reparo
+    "5916",  # Retorno de mercadoria para conserto ou reparo
+    "5917",  # Remessa em consignação mercantil ou industrial
+    "5918",  # Devolução de mercadoria recebida em consignação
+    "5919",  # Devolução simbólica de mercadoria vendida ou usada em processo industrial
+    "5920",  # Remessa de vasilhame ou sacaria
+    "5921",  # Devolução de vasilhame ou sacaria
+    "5922",  # Faturamento de venda para entrega futura
+    "5923",  # Remessa por conta e ordem de terceiros
+    "5924",  # Remessa para industrialização por conta e ordem
+    "5925",  # Retorno de mercadoria recebida para industrialização
+    "6114",  # Remessa em consignação interestadual
+    "6102",  # Bonificação interestadual
+    "6401",  # Bonificação
+    "6910",  # Remessa em bonificação, doação ou brinde (interestadual)
+    "6917"   # Remessa em consignação interestadual
+    ]
+
+def salvar_cfops():
+    with open(CFOPS_FILE, "w") as f:
+        json.dump(cfops_lista, f, indent=4)
+
+def adicionar_cfop():
+    novo = entry_novo_cfop.get().strip()
+    if not novo:
+        messagebox.showwarning("Aviso", "Digite um CFOP válido.")
+        return
+    if novo in cfops_lista:
+        messagebox.showinfo("Info", f"O CFOP {novo} já está na lista.")
+        return
+    cfops_lista.append(novo)
+    combo_cfops['values'] = cfops_lista
+    salvar_cfops()
+    entry_novo_cfop.delete(0, tk.END)
+    log(f"✅ CFOP {novo} adicionado à lista.")
+
 # ---------------- INTERFACE GRÁFICA ----------------
 
 root = tk.Tk()
 root.title("Gerar SPED com Duplicatas")
-root.geometry("800x600")
+root.geometry("800x700")
 root.resizable(False, False)
-
-# Estilo
 root.configure(bg="#f0f0f0")
 
 # Frame XML
@@ -398,7 +473,7 @@ frame1.pack(padx=10, pady=5, fill="x")
 tk.Label(frame1, text="Pasta de XML:", bg="#f0f0f0").pack(side=tk.LEFT)
 entry_xml = tk.Entry(frame1, width=60)
 entry_xml.pack(side=tk.LEFT, padx=5)
-tk.Button(frame1, text="Procurar", command=escolher_pasta_xml, bg="#007ACC", fg="white").pack(side=tk.LEFT)
+tk.Button(frame1, text="Procurar", command=lambda: escolher_pasta_xml(entry_xml), bg="#007ACC", fg="white").pack(side=tk.LEFT)
 
 # Frame SPED
 frame2 = tk.Frame(root, bg="#f0f0f0")
@@ -406,14 +481,25 @@ frame2.pack(padx=10, pady=5, fill="x")
 tk.Label(frame2, text="Arquivo SPED:", bg="#f0f0f0").pack(side=tk.LEFT)
 entry_sped = tk.Entry(frame2, width=60)
 entry_sped.pack(side=tk.LEFT, padx=5)
-tk.Button(frame2, text="Procurar", command=escolher_sped, bg="#007ACC", fg="white").pack(side=tk.LEFT)
+tk.Button(frame2, text="Procurar", command=lambda: escolher_sped(entry_sped), bg="#007ACC", fg="white").pack(side=tk.LEFT)
+
+# Frame CFOPS
+frame_cfops = tk.Frame(root, bg="#f0f0f0")
+frame_cfops.pack(padx=10, pady=5, fill="x")
+tk.Label(frame_cfops, text="CFOPS à Vista:", bg="#f0f0f0").pack(side=tk.LEFT)
+cfops_lista = carregar_cfops()
+combo_cfops = ttk.Combobox(frame_cfops, values=cfops_lista, width=15)
+combo_cfops.pack(side=tk.LEFT, padx=5)
+entry_novo_cfop = tk.Entry(frame_cfops, width=10)
+entry_novo_cfop.pack(side=tk.LEFT, padx=5)
+tk.Button(frame_cfops, text="Adicionar", command=adicionar_cfop, bg="#007ACC", fg="white").pack(side=tk.LEFT)
 
 # Botão executar
 frame3 = tk.Frame(root, bg="#f0f0f0")
 frame3.pack(pady=10)
 tk.Button(frame3, text="Gerar SPED Corrigido", command=executar, bg="green", fg="white", font=("Arial", 12, "bold")).pack()
 
-# Logs roláveis
+# Logs
 frame_logs = tk.Frame(root)
 frame_logs.pack(padx=10, pady=10, fill="both", expand=True)
 tk.Label(frame_logs, text="Logs de Processamento:").pack(anchor="w")
